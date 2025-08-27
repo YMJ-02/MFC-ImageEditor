@@ -1,5 +1,4 @@
-﻿
-// ImageEditDoc.cpp: CImageEditDoc 클래스의 구현
+﻿// ImageEditDoc.cpp: CImageEditDoc 클래스의 구현
 //
 
 #include "pch.h"
@@ -57,12 +56,52 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid)
 	return -1; // Failure
 }
 
+void CImageEditDoc::RestoreOriginalImage()
+{
+	// 원본 이미지가 없으면 아무것도 하지 않음
+	if (m_pImgOriginal == NULL)
+		return;
+
+	// 현재 편집 중인 이미지를 삭제
+	if (m_pImg)
+		delete m_pImg;
+
+	// ✨ --- 수정된 부분 시작 ---
+
+	// 1. 원본 이미지의 크기를 가져옵니다.
+	UINT width = m_pImgOriginal->GetWidth();
+	UINT height = m_pImgOriginal->GetHeight();
+	Gdiplus::Bitmap* pNewBitmap = NULL;
+
+	// 2. new 충돌을 방지하며 새로운 비트맵을 생성합니다.
+#ifdef _DEBUG
+#undef new
+#endif
+	pNewBitmap = new Gdiplus::Bitmap(width, height, PixelFormat32bppARGB);
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+
+	// 3. 새로 만든 비트맵에 원본 이미지를 그려넣습니다.
+	Gdiplus::Graphics graphics(pNewBitmap);
+	graphics.DrawImage(m_pImgOriginal, 0, 0, width, height);
+
+	// 4. m_pImg에 최종적으로 생성된 비트맵을 할당합니다.
+	m_pImg = pNewBitmap;
+
+	// ✨ --- 수정된 부분 끝 ---
+
+
+	SetModifiedFlag(TRUE); // 문서가 수정되었음을 알림
+	UpdateAllViews(NULL);  // 모든 뷰를 갱신
+}
+
 // CImageEditDoc 생성/소멸
 
 CImageEditDoc::CImageEditDoc() noexcept
 {
-	// TODO: 여기에 일회성 생성 코드를 추가합니다.
 	m_pImg = NULL;
+	m_pImgOriginal = NULL; // 원본 이미지 포인터 초기화
 }
 
 CImageEditDoc::~CImageEditDoc()
@@ -71,6 +110,10 @@ CImageEditDoc::~CImageEditDoc()
 	if (m_pImg) {
 		delete m_pImg;
 		m_pImg = NULL;
+	}
+	if (m_pImgOriginal) { // 원본 이미지 메모리 해제
+		delete m_pImgOriginal;
+		m_pImgOriginal = NULL;
 	}
 }
 
@@ -184,18 +227,51 @@ BOOL CImageEditDoc::OnOpenDocument(LPCTSTR lpszPathName)
 		delete m_pImg;
 		m_pImg = NULL;
 	}
-
-	// 새 이미지 로드
-	m_pImg = Gdiplus::Image::FromFile(CStringW(lpszPathName));
-	if (m_pImg == NULL || m_pImg->GetLastStatus() != Gdiplus::Ok)
+	if (m_pImgOriginal)
 	{
-		// 이미지 로드 실패
-		if (m_pImg)
-			delete m_pImg;
-		m_pImg = NULL;
+		delete m_pImgOriginal;
+		m_pImgOriginal = NULL;
+	}
+
+	// ✨ --- 수정된 부분 시작 ---
+
+	// 1. 이미지를 임시 객체로 로드합니다.
+	Gdiplus::Image* pTempImg = Gdiplus::Image::FromFile(CStringW(lpszPathName));
+
+	if (pTempImg == NULL || pTempImg->GetLastStatus() != Gdiplus::Ok)
+	{
+		if (pTempImg)
+			delete pTempImg;
 		AfxMessageBox(_T("이미지 로드에 실패했습니다."));
 		return FALSE;
 	}
+
+	// 2. 로드한 이미지의 크기와 동일한 새 비트맵(m_pImg)을 생성합니다.
+	//    이렇게 하면 m_pImg는 항상 Bitmap 형식이 됩니다.
+	UINT width = pTempImg->GetWidth();
+	UINT height = pTempImg->GetHeight();
+#ifdef _DEBUG
+#undef new
+#endif
+
+	m_pImg = new Gdiplus::Bitmap(width, height, PixelFormat32bppARGB);
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+
+	// 3. 새로 만든 비트맵에 원본 이미지를 그대로 그려넣습니다.
+	Gdiplus::Graphics graphics(m_pImg);
+	graphics.DrawImage(pTempImg, 0, 0, width, height);
+
+	// 4. 임시로 사용한 이미지 객체는 메모리에서 해제합니다.
+	delete pTempImg;
+
+	// ✨ --- 수정된 부분 끝 ---
+
+
+	// 원본 이미지를 복제하여 저장
+	m_pImgOriginal = m_pImg->Clone();
 
 	UpdateAllViews(NULL);
 
@@ -233,4 +309,81 @@ BOOL CImageEditDoc::OnSaveDocument(LPCTSTR lpszPathName)
 	// return CDocument::OnSaveDocument(lpszPathName);
 	SetModifiedFlag(FALSE);
 	return TRUE;
+}
+void CImageEditDoc::ColorKeepGrayscale(const Gdiplus::Color& keepColor)
+{
+	if (m_pImg == NULL)
+		return;
+	UINT width = m_pImg->GetWidth();
+	UINT height = m_pImg->GetHeight();
+	Bitmap* pNewBitmap = NULL;
+	// =================================================================
+	// ✨ 최종 해결 코드: MFC의 DEBUG_NEW 기능을 잠시 비활성화합니다. -> why? : MFC의 디버그용 new 와 GDI+의 new 충돌 방지 위해서
+#ifdef _DEBUG
+#undef new
+#endif
+
+	pNewBitmap = new Gdiplus::Bitmap(width, height, PixelFormat32bppARGB);
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+	// =================================================================
+
+	if (pNewBitmap == NULL)
+		return;
+
+	Gdiplus::BitmapData bitmapData;
+	Gdiplus::Rect rect(0, 0, width, height);
+
+	if (pNewBitmap->LockBits(&rect, Gdiplus::ImageLockModeWrite, PixelFormat32bppARGB, &bitmapData) != Gdiplus::Ok)
+	{
+		delete pNewBitmap;
+		return;
+	}
+
+	Gdiplus::BitmapData srcData;
+	Gdiplus::Bitmap* pSrcBitmap = dynamic_cast<Gdiplus::Bitmap*>(m_pImg);
+	if (pSrcBitmap == nullptr || pSrcBitmap->LockBits(&rect, Gdiplus::ImageLockModeRead, PixelFormat32bppARGB, &srcData) != Gdiplus::Ok)
+	{
+		pNewBitmap->UnlockBits(&bitmapData);
+		delete pNewBitmap;
+		return;
+	}
+
+	BYTE* pSrc = (BYTE*)srcData.Scan0;
+	BYTE* pDst = (BYTE*)bitmapData.Scan0;
+
+	for (UINT y = 0; y < height; ++y)
+	{
+		for (UINT x = 0; x < width; ++x)
+		{
+			BYTE b = pSrc[y * srcData.Stride + x * 4 + 0];
+			BYTE g = pSrc[y * srcData.Stride + x * 4 + 1];
+			BYTE r = pSrc[y * srcData.Stride + x * 4 + 2];
+			BYTE a = pSrc[y * srcData.Stride + x * 4 + 3];
+
+			if (r == keepColor.GetR() && g == keepColor.GetG() && b == keepColor.GetB())
+			{
+				pDst[y * bitmapData.Stride + x * 4 + 0] = b;
+				pDst[y * bitmapData.Stride + x * 4 + 1] = g;
+				pDst[y * bitmapData.Stride + x * 4 + 2] = r;
+				pDst[y * bitmapData.Stride + x * 4 + 3] = a;
+			}
+			else
+			{
+				BYTE gray = (BYTE)(0.299 * r + 0.587 * g + 0.114 * b);
+				pDst[y * bitmapData.Stride + x * 4 + 0] = gray;
+				pDst[y * bitmapData.Stride + x * 4 + 1] = gray;
+				pDst[y * bitmapData.Stride + x * 4 + 2] = gray;
+				pDst[y * bitmapData.Stride + x * 4 + 3] = a;
+			}
+		}
+	}
+
+	pSrcBitmap->UnlockBits(&srcData);
+	pNewBitmap->UnlockBits(&bitmapData);
+
+	delete m_pImg;
+	m_pImg = pNewBitmap;
 }

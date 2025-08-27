@@ -1,5 +1,4 @@
-﻿
-// ImageEditDoc.h: CImageEditDoc 클래스의 인터페이스
+﻿// ImageEditDoc.h: CImageEditDoc 클래스의 인터페이스
 //
 
 
@@ -18,7 +17,8 @@ public:
 
 	// 작업입니다.
 public:
-
+	Gdiplus::Image* m_pImg; // 현재 편집 중인 이미지
+	Gdiplus::Image* m_pImgOriginal; // 원본 이미지를 저장할 멤버 변수 추가
 	// 재정의입니다.
 public:
 	virtual BOOL OnNewDocument();
@@ -36,9 +36,6 @@ public:
 	virtual void Dump(CDumpContext& dc) const;
 #endif
 
-public:
-	Gdiplus::Image* m_pImg; // 이미지 데이터를 저장할 멤버 변수 추가
-
 	// 생성된 메시지 맵 함수
 protected:
 	DECLARE_MESSAGE_MAP()
@@ -50,4 +47,7 @@ protected:
 public:
 	virtual BOOL OnOpenDocument(LPCTSTR lpszPathName);
 	virtual BOOL OnSaveDocument(LPCTSTR lpszPathName);
+public:
+	void ColorKeepGrayscale(const Gdiplus::Color& keepColor);
+	void RestoreOriginalImage();
 };

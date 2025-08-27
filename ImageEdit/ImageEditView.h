@@ -2,11 +2,10 @@
 //
 
 #pragma once
-#include "ImageEditDoc.h"
 
 class CImageEditView : public CView
 {
-protected: // serialization에서만 만들어집니다.
+protected:
 	CImageEditView() noexcept;
 	DECLARE_DYNCREATE(CImageEditView)
 
@@ -19,9 +18,8 @@ public:
 
 	// 재정의입니다.
 public:
-	virtual void OnDraw(CDC* pDC);
+	virtual void OnDraw(CDC* pDC);  // 이 뷰를 그리기 위해 재정의되었습니다.
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
-	virtual void OnUpdate(CView* pSender, LPARAM lHint, CObject* pHint);
 
 protected:
 	virtual BOOL OnPreparePrinting(CPrintInfo* pInfo);
@@ -37,8 +35,17 @@ public:
 #endif
 
 protected:
-	DECLARE_MESSAGE_MAP()
+	BOOL m_bEyedropperMode; // 스포이드 모드 상태 변수 선언
+
+	// 생성된 메시지 맵 함수
+protected:
+	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnEffectGrayscale();
+	afx_msg void OnUpdate(CView* pSender, LPARAM lHint, CObject* pHint);
+	afx_msg void OnEffectInvertSpoid();
+	afx_msg void OnEffectUndo();
+	DECLARE_MESSAGE_MAP()
 };
 
 #ifndef _DEBUG

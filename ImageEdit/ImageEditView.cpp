@@ -22,10 +22,17 @@ BEGIN_MESSAGE_MAP(CImageEditView, CView)
 	ON_COMMAND(ID_FILE_PRINT_DIRECT, &CView::OnFilePrint)
 	ON_COMMAND(ID_FILE_PRINT_PREVIEW, &CView::OnFilePrintPreview)
 	ON_COMMAND(ID_EFFECT_GRAYSCALE, &CImageEditView::OnEffectGrayscale)
+
+	// ✨ 추가된 메시지 맵
+	ON_COMMAND(ID_EFFECT_INVERT_SPOID, &CImageEditView::OnEffectInvertSpoid)
+	ON_COMMAND(ID_EFFECT_UNDO, &CImageEditView::OnEffectUndo)
+	ON_WM_RBUTTONDOWN()
+	ON_WM_LBUTTONDOWN()
 END_MESSAGE_MAP()
 
 CImageEditView::CImageEditView() noexcept
 {
+	m_bEyedropperMode = FALSE; // 스포이드 모드 상태 변수 초기화
 }
 
 CImageEditView::~CImageEditView()
@@ -68,8 +75,6 @@ void CImageEditView::OnUpdate(CView* pSender, LPARAM lHint, CObject* pHint)
 		{
 			CRect rectFrame, rectClient;
 			pFrame->GetWindowRect(&rectFrame);
-
-			// ✨ 수정된 부분: 'client'를 'rectClient'로 변경
 			GetWindowRect(&rectClient);
 
 			int borderWidth = rectFrame.Width() - rectClient.Width();
@@ -129,20 +134,15 @@ void CImageEditView::OnEffectGrayscale()
 	UINT height = pDoc->m_pImg->GetHeight();
 	Bitmap* pNewBitmap = NULL;
 
-	// =================================================================
-	// ✨ 최종 해결 코드: MFC의 DEBUG_NEW 기능을 잠시 비활성화합니다. -> why? : MFC의 디버그용 new 와 GDI+의 new 충돌 방지 위해서
 #ifdef _DEBUG
 #undef new
 #endif
-
 	pNewBitmap = new Bitmap(width, height, PixelFormat32bppARGB);
-
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
-	// =================================================================
 
-	if (pNewBitmap == NULL) return; // 예외 처리
+	if (pNewBitmap == NULL) return;
 
 	Graphics graphics(pNewBitmap);
 
@@ -164,4 +164,62 @@ void CImageEditView::OnEffectGrayscale()
 
 	pDoc->SetModifiedFlag(TRUE);
 	pDoc->UpdateAllViews(NULL);
+}
+
+// ✨ 스포이드 반전 메뉴 핸들러 구현
+void CImageEditView::OnEffectInvertSpoid()
+{
+	CImageEditDoc* pDoc = GetDocument();
+	if (!pDoc || !pDoc->m_pImg)
+	{
+		AfxMessageBox(_T("먼저 이미지를 열어주세요."));
+		return;
+	}
+
+	// 기존에 구현된 스포이드 모드를 활성화
+	m_bEyedropperMode = TRUE;
+	SetCursor(LoadCursor(NULL, IDC_CROSS)); // 커서를 십자 모양으로 변경
+	AfxMessageBox(_T("이미지에서 유지할 색상을 마우스 왼쪽 버튼으로 클릭하세요."));
+}
+
+// ✨ 되돌리기 메뉴 핸들러 구현
+void CImageEditView::OnEffectUndo()
+{
+	CImageEditDoc* pDoc = GetDocument();
+	ASSERT_VALID(pDoc);
+	if (!pDoc) return;
+
+	// 문서의 되돌리기 함수 호출
+	pDoc->RestoreOriginalImage();
+}
+
+// ✨ 마우스 우클릭 시 스포이드 모드 진입 (메뉴와 동일한 기능 호출)
+void CImageEditView::OnRButtonDown(UINT nFlags, CPoint point)
+{
+	OnEffectInvertSpoid();
+	CView::OnRButtonDown(nFlags, point);
+}
+
+// ✨ 스포이드 모드에서 클릭 시 색상 추출 및 변환 (수정된 버전)
+void CImageEditView::OnLButtonDown(UINT nFlags, CPoint point)
+{
+	if (m_bEyedropperMode)
+	{
+		CImageEditDoc* pDoc = GetDocument();
+		if (!pDoc || !pDoc->m_pImg) return;
+
+		Gdiplus::Bitmap* pBitmap = (Gdiplus::Bitmap*)pDoc->m_pImg;
+		Gdiplus::Color selectedColor;
+		pBitmap->GetPixel(point.x, point.y, &selectedColor);
+
+		// 색상 유지/흑백 변환 함수 호출
+		pDoc->ColorKeepGrayscale(selectedColor);
+		pDoc->SetModifiedFlag(TRUE);
+		pDoc->UpdateAllViews(NULL); // Invalidate() 대신 UpdateAllViews() 호출
+
+		m_bEyedropperMode = FALSE;
+		SetCursor(LoadCursor(NULL, IDC_ARROW));
+	}
+
+	CView::OnLButtonDown(nFlags, point); // 기본 동작 호출
 }
